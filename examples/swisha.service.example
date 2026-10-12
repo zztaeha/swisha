@@ -1,0 +1,95 @@
+# swisha, one instance. Copy to /etc/systemd/system/swisha.service.
+#
+#   sudo useradd --system --no-create-home --shell /usr/sbin/nologin swisha
+#   sudo cp examples/swisha.service.example /etc/systemd/system/swisha.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now swisha
+#
+# One instance pays from every Swish number stored in its database. The env
+# file must be owned by swisha and closed to other users:
+#
+#   sudo chown swisha: /etc/swisha/active.env
+#   sudo chmod 600 /etc/swisha/active.env
+#
+# The numbers' certificates live in /var/lib/swisha. Neither swisha nor this
+# unit makes it: make it by hand, once, for swisha alone, and set
+# SWISH_CERT_DIR=/var/lib/swisha. Keep it elsewhere and name that path in
+# ReadWritePaths below too.
+#
+#   sudo install -d -m 700 -o swisha -g swisha /var/lib/swisha
+
+[Unit]
+Description=swisha payouts
+Documentation=https://github.com/zztaeha/swisha
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+# A misconfiguration is not transient. Give up rather than restarting into
+# the same error for the rest of the day. These live in [Unit] since systemd
+# v229, and under [Service] it ignores StartLimitIntervalSec=.
+StartLimitBurst=5
+StartLimitIntervalSec=120
+
+[Service]
+Type=exec
+User=swisha
+Group=swisha
+ExecStart=/usr/local/bin/swisha
+
+# Everything swisha reads lives in this one file.
+Environment=SWISHA_ENV_FILE=/etc/swisha/active.env
+
+# glibc keeps what a thread frees for that thread. Two arenas cut the
+# growth under load by a third, measured, for under 1% more CPU.
+Environment=MALLOC_ARENA_MAX=2
+
+# /run is tmpfs and is wiped on every reboot, so the socket's directory has
+# to be recreated on each start. swisha refuses to boot without it rather
+# than binding somewhere unintended. The env file's SWISH_SERVER_SOCKET
+# must point inside this directory.
+RuntimeDirectory=swisha
+RuntimeDirectoryMode=0750
+
+# Where swisha keeps the certificates of the numbers added to it, the one
+# place on disk it writes. The - hands a missing folder to swisha, which
+# refuses to start and names it. systemd's own error blames the binary.
+ReadWritePaths=-/var/lib/swisha
+
+Restart=on-failure
+RestartSec=5
+
+# Each number paying keeps a connection to Swish, as each event stream does: 1,000 paying at once
+# took 1,859 open files, past systemd's default of 1,024.
+LimitNOFILE=65536
+
+# Hardening. swisha writes only to the two directories above, never execs,
+# holds no capability, and needs Unix and INET sockets and nothing else.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateUsers=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProcSubset=pid
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

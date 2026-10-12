@@ -1,0 +1,54 @@
+[package]
+name    = "swisha"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+description = "A standalone service for Swish payouts: signing, double-payout guards and status recovery."
+repository = "https://github.com/zztaeha/swisha"
+authors = ["Taeha (zztaeha)"]
+publish = false
+
+[[bin]]
+name = "swisha"
+required-features = ["http"]
+
+[features]
+default = ["http"]
+# The HTTP service. Omit it to use swisha as a library: the payout engine, the storage trait
+# and the Swish client with no web framework attached.
+http    = ["dep:axum", "dep:hyper", "dep:hyper-util", "dep:tokio-stream", "dep:tracing-subscriber", "tokio/net", "tokio/rt-multi-thread", "tokio/signal"]
+
+[dependencies]
+axum       = { version = "0.8", optional = true }
+# axum::serve sets no timer, so no header timeout can apply. Both are already in the tree under axum.
+hyper      = { version = "1", features = ["server", "http1"], optional = true }
+hyper-util = { version = "0.1", features = ["tokio", "server-graceful", "http1"], optional = true }
+tokio-stream = { version = "0.1", features = ["sync"], optional = true }
+tokio      = { version = "1", features = ["rt", "macros", "time", "sync"] }
+sqlx       = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres"] }
+serde      = { version = "1", features = ["derive"] }
+# raw_value keeps the signed payload byte-identical between signing and transmission.
+serde_json = { version = "1", features = ["raw_value"] }
+tracing    = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"], optional = true }
+# rustls-no-provider rather than rustls: the default provider is aws-lc-rs, and a payments binary
+# should carry one crypto implementation. Every TLS client here uses ring, which signs payloads too.
+reqwest    = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json"] }
+ring       = "0.17"
+# To install the crypto provider that reqwest's rustls-no-provider leaves unset, and to give every
+# number's client one shared verifier: the one reqwest would build, already in the tree.
+rustls     = { version = "0.23", default-features = false, features = ["ring"] }
+rustls-platform-verifier = "0.7"
+
+# How docs.rs would build the docs. Locally, for the badge that marks what needs `http`:
+# RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --no-deps --all-features
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[profile.release]
+lto           = true
+codegen-units = 1
+strip         = true
+panic         = "abort"

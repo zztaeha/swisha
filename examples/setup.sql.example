@@ -1,0 +1,32 @@
+-- The role and database swisha connects to. Run this once, as a
+-- superuser, before --print-schema creates the tables.
+--
+--   sudo -u postgres psql < examples/setup.sql.example
+--   swisha --print-schema | psql -h localhost -U swisha -d swisha
+--
+-- Change the password. It is the DB_PASS in your env file.
+
+CREATE ROLE swisha WITH LOGIN PASSWORD 'change-me';
+
+CREATE DATABASE swisha OWNER swisha;
+
+-- Every role on the server may connect to a new database, and could then
+-- LISTEN to its payout events, recipients included, and NOTIFY forged ones,
+-- as can a role granted CONNECT later, whatever it may SELECT.
+REVOKE CONNECT, TEMPORARY ON DATABASE swisha FROM PUBLIC;
+GRANT CONNECT, TEMPORARY ON DATABASE swisha TO swisha;
+
+-- swisha creates and reads only its own tables, so it needs nothing beyond
+-- its own schema. Revoking the public schema stops it from touching
+-- anything else that shares the database.
+\connect swisha
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+GRANT ALL ON SCHEMA public TO swisha;
+
+-- Three server settings this file leaves to you, in postgresql.conf, measured
+-- at 30 payouts a second. None touches durability: full-page images are
+-- compressed, and checkpoints come further apart, so fewer are written.
+--
+--   wal_compression = lz4        # 23% less WAL per payout; zstd, 33%
+--   checkpoint_timeout = 30min   # 17% less beside the default 5min
+--   max_wal_size = 4GB           # room for 30 minutes at 300 a second

@@ -1,0 +1,44 @@
+# PostgreSQL for local development and the test suite. swisha itself runs
+# on the host.
+#
+#   docker compose -f examples/docker-compose.yml.example up -d
+#   export SWISHA_TEST_DATABASE_URL=\
+#     postgres://swisha:swisha@localhost:5433/swisha_test
+#   cargo test
+#
+# Port 5433, not 5432, so it cannot collide with a PostgreSQL on the host,
+# and loopback only, since the role below is a superuser with a known password.
+
+services:
+  postgres:
+    image: postgres:18
+    container_name: swisha-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: swisha
+      POSTGRES_PASSWORD: swisha
+      POSTGRES_DB: swisha_test
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      # PostgreSQL 18 keeps its data in a versioned directory under this path, so the volume
+      # mounts here rather than at /var/lib/postgresql/data as older images had it.
+      - swisha-pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U swisha -d swisha_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  swisha-pgdata:
+
+# This is a development database. The password is in plain text on purpose,
+# because nothing here should ever hold real payouts. Production PostgreSQL
+# belongs outside Docker, or at least outside this file.
+#
+# The test suite creates its own tables under a unique prefix per test and
+# sweeps what earlier runs left behind, so one container serves every run.
+# To start clean anyway:
+#
+#   docker compose -f examples/docker-compose.yml.example down -v

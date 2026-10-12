@@ -1,0 +1,21 @@
+/target
+/tasks
+
+# A local copy of the compose file from examples/. The shipped one is the repo's.
+/docker-compose.yml
+/docker-compose.override.yml
+
+# Environment files hold the database password and the API secret. None of these match a
+# plain `.env*` pattern, which is why they are listed explicitly.
+*.env
+!*.example
+!tests/fixtures/sample.env
+
+# Certificates and keys, wherever they land.
+*.pem
+*.key
+*.p12
+*.csr
+!tests/fixtures/cert.pem
+
+.DS_Store

@@ -1,0 +1,56 @@
+# swisha's callback, and nothing else, published over HTTPS.
+#
+#   sudo cp examples/nginx.conf.example /etc/nginx/sites-available/swisha
+#   sudo ln -s /etc/nginx/sites-available/swisha /etc/nginx/sites-enabled/
+#   sudo nginx -t && sudo systemctl reload nginx
+#
+# Swish requires HTTPS and swisha serves plain HTTP, so this is part of the
+# deployment rather than an option. Three things here are load-bearing,
+# marked below.
+
+server {
+    listen 443 ssl;
+    server_name payouts.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/payouts.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/payouts.example.com/privkey.pem;
+
+    # LOAD BEARING 1: "location =" is an exact match. A prefix match on
+    # /swish/ would publish the payout endpoint to the internet, and that
+    # endpoint moves money.
+    location = /swish/callback {
+        proxy_pass http://127.0.0.1:8084;
+        proxy_set_header Host              $host;
+
+        # LOAD BEARING 2: overwrite, never append. The usual snippet is
+        # $proxy_add_x_forwarded_for, which appends to whatever the caller
+        # sent, and swisha reads the first address in the list. A caller who
+        # puts a Swish address in that header would be believed. Measured:
+        # with the appending form a forged callback was accepted and marked
+        # a payout PAID; with $remote_addr it was refused 403.
+        proxy_set_header X-Forwarded-For   $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    # LOAD BEARING 3: everything else is refused here, not just left unrouted.
+    location / { return 404; }
+}
+
+# Plain HTTP exists only to be redirected. Swish never uses it.
+server {
+    listen 80;
+    server_name payouts.example.com;
+    return 301 https://$host$request_uri;
+}
+
+# TRUSTED_PROXY in swisha's env must name this proxy, or the forwarded
+# address is ignored and every genuine callback is refused instead. It
+# defaults to 127.0.0.1, correct when nginx runs on the same host.
+#
+# When SWISH_ENV=production, swisha additionally accepts callbacks only
+# from Swish's own addresses. Confirmed against a live callback:
+# 89.46.83.171. The full list is in src/http/routes/callback.rs and is
+# enforced by swisha, not here.
+#
+# One swisha pays from every number, so this one callback route serves them
+# all: Swish's callback names the number it paid from.

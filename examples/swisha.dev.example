@@ -1,0 +1,87 @@
+# swisha, development. Talks to Swish's MSS simulator, so no real money moves.
+#
+#   cp swisha.dev.example dev.env && chmod 600 dev.env
+#   createdb swisha && swisha --print-schema | psql swisha
+#   SWISHA_ENV_FILE=dev.env swisha
+#
+# Fields are blank, and blank means the default. Fill in the ones marked
+# required. SWISH_ENV is already set for this file. A key swisha does not
+# read stops startup, so a misspelled setting cannot quietly keep its default.
+#
+# This file holds the database password, so swisha refuses to start while
+# other users can open it: owned by the user swisha runs as, mode 600.
+#
+# Keys must be PKCS#8, the form that starts -----BEGIN PRIVATE KEY-----.
+# For a PKCS#1 key: openssl pkcs8 -topk8 -nocrypt -in in.key -out out.key
+
+# Database
+# PostgreSQL. A path in DB_HOST is treated as a Unix socket directory, and
+# an IPv6 address goes in brackets: [::1]:5432.
+
+DB_HOST=               # default localhost:5432
+DB_NAME=               # required
+DB_USER=               # required
+DB_PASS=               # blank for peer authentication
+DB_SSLMODE=            # default require off this host, prefer on it
+DB_SSLROOTCERT=        # a private CA's root, for verify-ca or verify-full
+DB_POOL_SIZE=          # connections per copy, default 10. Raise past ~400 payouts/s
+
+# Listeners
+# The internal API serves payouts, confirm and redo, status, events, health
+# and the Swish numbers. A Unix socket is guarded by its file permissions and
+# needs no secret. Setting the socket leaves the address below unused.
+
+SWISH_SERVER_SOCKET=   # e.g. /run/swisha/swisha.sock
+SWISH_SERVER_ADDR=     # default 127.0.0.1:8083
+SWISH_CALLBACK_ADDR=   # default 127.0.0.1:8084
+TRUSTED_PROXY=         # default 127.0.0.1. IP addresses, comma-separated
+
+# Swish
+# The callback URL has to be set even locally. swisha also asks Swish after
+# every payout, so a payout still settles if Swish never reaches you. For a
+# real callback locally, run a tunnel:
+#
+#   cloudflared tunnel --url http://127.0.0.1:8084
+
+SWISH_ENV=test         # the MSS simulator. No money moves
+SWISH_MAX_PAYOUT=      # min 1 SEK, default and max 150000, Swish's limit
+SWISH_PAYOUTS_PER_MINUTE= # per number and caller, default 30. Raise for bulk payouts
+SWISH_CALLBACK_URL=    # required. https, ending in /swish/callback
+
+# Swish numbers
+# Each number swisha pays from is stored in the database and added through
+# the API, POST /swish/payers, with its two certificates. swisha keeps the
+# certificates in this folder, in a folder of its own for each number, and
+# only swisha may open it. swisha never makes it:
+#
+#   mkdir -m 700 certs
+#
+# Swish's test bundle ships each certificate and its key separately, so join
+# them once before adding the test number. MSS refuses a payout signed with
+# anything but the signing one:
+#
+#   cat Swish_Merchant_TestCertificate_1234679304.pem \
+#       Swish_Merchant_TestCertificate_1234679304.key > tls.pem
+#   cat Swish_Merchant_TestSigningCertificate_1234679304.pem \
+#       Swish_Merchant_TestSigningCertificate_1234679304.key > signing.pem
+
+SWISH_CERT_DIR=        # required. An absolute path to that folder
+
+# API
+# The secret guards the internal API when it listens on a port. It is not a
+# Swish credential, you generate it: openssl rand -hex 32
+# The payout message is what the recipient reads in their Swish app. Swish
+# takes A-Z, a-z, åäö ÅÄÖ, 0-9, space and !?(),.-:; only, and swisha refuses
+# any other character in a message or this template before paying.
+#
+# Every payout needs the recipient's 12-digit personnummer and a reference of
+# 1 to 35 characters from A-Z, a-z, 0-9 and -. Anything else is refused with
+# 400 before it is stored, because Swish would refuse it too.
+
+API_SHARED_SECRET=     # min 16 characters, blank only behind a socket or on loopback
+SWISH_PAYOUT_MESSAGE=  # {reference} substituted, cut to 50 characters
+SWISH_ERROR_LANG=      # en or sv, default en
+
+# Logging
+
+RUST_LOG=              # error, warn, info, debug, trace. Default info
